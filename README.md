@@ -43,3 +43,18 @@ pnpm test:e2e # real upstream, needs RUN_E2E=1
 | `OPENROUTER_TITLE` | `OpenCode` |
 
 Client `Authorization: Bearer <OpenRouter key>` is forwarded upstream when present.
+
+> **Important — "free" still requires a key.** Even `:free` / `stealth/crouton-alpha`
+> models return `401 No cookie auth credentials found` when called anonymously.
+> Pass your OpenRouter key through the client on every request:
+>
+> ```bash
+> curl http://localhost:3000/v1/chat/completions \
+>   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+>   -H "Content-Type: application/json" \
+>   -d '{"messages":[{"role":"user","content":"hi"}]}'
+> ```
+>
+> This router never stores or hard-codes a key — it only forwards the caller's.
+> Without a key the router will still accept the request and forward it, but the
+> upstream will 401 and the caller sees `401` with the upstream message.

@@ -85,4 +85,29 @@ describe("POST /v1/chat/completions", () => {
     const json: any = await res.json();
     expect(json.error.code).toBe("all_models_failed");
   });
+
+  it("forwards client Authorization header upstream as Bearer key", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [] }), { status: 200 }),
+    );
+    const app = buildApp(fetchFn as any);
+    const res = await app.request(
+      "/v1/chat/completions",
+      post({ messages: [] }, { Authorization: "Bearer my-openrouter-key" }),
+    );
+    expect(res.status).toBe(200);
+    const headers = (fetchFn.mock.calls[0]![1] as any).headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer my-openrouter-key");
+  });
+
+  it("upstream 401 (missing key) is returned as-is", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "No cookie auth credentials found" } }), { status: 401 }),
+    );
+    const app = buildApp(fetchFn as any);
+    const res = await app.request("/v1/chat/completions", post({ messages: [] }));
+    expect(res.status).toBe(401);
+    const json: any = await res.json();
+    expect(json.error.message).toContain("No cookie auth credentials found");
+  });
 });
