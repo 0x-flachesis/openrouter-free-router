@@ -13,25 +13,24 @@ export function isContextLengthErrorMessage(message: string): boolean {
 }
 
 export interface OpenRouterErrorBody {
+  code: number;
   message: string;
   type?: string;
-  code?: string | number;
+  metadata?: Record<string, unknown>;
 }
 
-export function parseUpstreamErrorBody(raw: string): OpenRouterErrorBody {
+export function parseUpstreamErrorBody(raw: string): OpenRouterErrorBody | null {
   try {
     const json: any = JSON.parse(raw);
-    if (json?.error?.message) {
-      return {
-        message: String(json.error.message),
-        type: json.error.type,
-        code: json.error.code,
-      };
-    }
-    if (json?.message) return { message: String(json.message) };
-    return { message: raw.slice(0, 500) };
+    if (!json?.error?.message) return null;
+    return {
+      code: Number(json.error.code),
+      message: String(json.error.message),
+      type: json.error.type,
+      metadata: json.error.metadata,
+    };
   } catch {
-    return { message: raw.slice(0, 500) || "Upstream error" };
+    return null;
   }
 }
 
@@ -44,19 +43,33 @@ export function classifyUpstreamError(
   status: number,
   rawBody: string,
 ): UpstreamFailure {
+  const parsed = parseUpstreamErrorBody(rawBody);
+  const body: OpenRouterErrorBody = parsed ?? {
+    code: status,
+    message: rawBody.slice(0, 500) || "Upstream error",
+  };
+
   if (status >= 400 && status < 500 && status !== 429) {
-    const body = parseUpstreamErrorBody(rawBody);
     if (status === 400 && isContextLengthErrorMessage(body.message)) {
       return { kind: "context-length", status, body };
     }
     return { kind: "client-error", status, body };
   }
-  const body = parseUpstreamErrorBody(rawBody);
+
   return {
     kind: "retryable",
     status,
     reason: `upstream ${status}: ${body.message}`,
   };
+}
+
+export function classifyUpstreamSuccessBody(
+  status: number,
+  rawBody: string,
+): UpstreamFailure | null {
+  return parseUpstreamErrorBody(rawBody)
+    ? classifyUpstreamError(status, rawBody)
+    : null;
 }
 
 export function isTimeoutError(err: unknown): boolean {

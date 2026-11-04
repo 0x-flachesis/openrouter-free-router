@@ -61,7 +61,7 @@ describe("routeChatCall", () => {
     expect((out as any).attempts).toBe(3);
   });
 
-  it("respects maxAttempts", async () => {
+  it("tries all free candidates even beyond default MAX_ATTEMPTS", async () => {
     const fetchFn = vi.fn().mockResolvedValue(resp(503, "down"));
     const out = await routeChatCall({
       body: { messages: [] },
@@ -70,7 +70,49 @@ describe("routeChatCall", () => {
       fetchFn,
     });
     expect(out.kind).toBe("all-failed");
-    expect((out as any).attempts).toBe(2);
+    expect((out as any).attempts).toBe(3);
+  });
+
+  it("strips client models from upstream payload", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResp(200, {}));
+    await routeChatCall({ body: { messages: [], models: ["paid/model"] }, models, config, fetchFn });
+    const sent = JSON.parse((fetchFn.mock.calls[0]![1] as any).body);
+    expect(sent.models).toBeUndefined();
+    expect(sent.model).toBe("m1");
+  });
+
+  it("tries free candidates before user fallback models", async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(resp(429, "rate"))
+      .mockResolvedValueOnce(resp(429, "rate"))
+      .mockResolvedValueOnce(resp(429, "rate"))
+      .mockResolvedValueOnce(jsonResp(200, {}));
+    const out = await routeChatCall({
+      body: { messages: [], models: ["paid/fallback"] },
+      models,
+      config,
+      fetchFn,
+    });
+    expect((out as any).model).toBe("paid/fallback");
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+    const calledModels = fetchFn.mock.calls.map((c) => JSON.parse((c[1] as any).body).model);
+    expect(calledModels).toEqual(["m1", "m2", "m3", "paid/fallback"]);
+  });
+
+  it("stops at user fallback for context-length", async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(resp(429, "rate"))
+      .mockResolvedValueOnce(resp(429, "rate"))
+      .mockResolvedValueOnce(resp(429, "rate"))
+      .mockResolvedValueOnce(jsonResp(400, { error: { message: "maximum context length exceeded" } }));
+    const out = await routeChatCall({
+      body: { messages: [], models: ["paid/fallback"] },
+      models,
+      config,
+      fetchFn,
+    });
+    expect(out.kind).toBe("context-length");
+    expect(fetchFn).toHaveBeenCalledTimes(4);
   });
 
   it("forwards Authorization only when provided", async () => {

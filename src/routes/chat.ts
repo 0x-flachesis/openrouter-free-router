@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { stream } from "hono/streaming";
+import { streamSSE } from "hono/streaming";
 import { routeChatCall } from "../services/router.js";
 import type { Config } from "../config.js";
 import type { FreeModel } from "../types.js";
@@ -27,7 +27,16 @@ export function chatRoutes(deps: ChatDeps) {
     }
 
     const apiKey = (c as any).get("apiKey") as string | undefined;
-    const outcome = await routeChatCall({ body, apiKey, models, config, fetchFn, onAttempt });
+    const upstreamSignal = c.req.raw.signal;
+    const outcome = await routeChatCall({
+      body,
+      apiKey,
+      models,
+      config,
+      fetchFn,
+      signal: upstreamSignal,
+      onAttempt,
+    });
 
     if (outcome.kind === "context-length") {
       return c.json(
@@ -36,8 +45,10 @@ export function chatRoutes(deps: ChatDeps) {
       );
     }
     if (outcome.kind === "client-error") {
+      const upstreamCode = outcome.failure.body.code;
+      const code = typeof upstreamCode === "number" || typeof upstreamCode === "string" ? upstreamCode : "upstream_error";
       return c.json(
-        { error: { message: outcome.failure.body.message, type: "invalid_request_error", code: outcome.failure.body.code ?? "upstream_error" } },
+        { error: { message: outcome.failure.body.message, type: "invalid_request_error", code } },
         outcome.failure.status as any,
       );
     }
@@ -48,32 +59,38 @@ export function chatRoutes(deps: ChatDeps) {
       );
     }
 
-    // Non-streaming: forward body as-is
     if (body.stream !== true) {
-      const text = await outcome.response.text();
-      c.header("Content-Type", outcome.response.headers.get("Content-Type") ?? "application/json");
-      return c.body(text, outcome.response.status as any);
+      return new Response(outcome.response.body, {
+        status: outcome.status,
+        headers: outcome.response.headers,
+      });
     }
 
-    // Streaming: bridge upstream SSE reader into Hono stream
     const upstreamBody = outcome.response.body;
     if (!upstreamBody) {
       return c.json({ error: { message: "Upstream returned no body", type: "server_error" } }, 502);
     }
-    return stream(c, async (s) => {
+    return streamSSE(c, async (s) => {
       const reader = upstreamBody.getReader();
+      const decoder = new TextDecoder();
+      s.onAbort(() => void reader.cancel().catch(() => undefined));
       try {
         for (;;) {
+          if (s.aborted) break;
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = new TextDecoder().decode(value);
-          await s.write(chunk);
+          const chunk = decoder.decode(value, { stream: true });
+          if (chunk) await s.write(chunk);
         }
+        const tail = decoder.decode();
+        if (tail) await s.write(tail);
       } catch (err) {
-        const msg = `data: ${JSON.stringify({ error: { message: `stream interrupted: ${String(err)}`, type: "server_error" } })}\n\n`;
-        await s.write(msg);
+        if (!s.aborted) {
+          await s.write(`data: ${JSON.stringify({ error: { message: `stream interrupted: ${String(err)}`, type: "server_error" } })}\n\n`);
+        }
       } finally {
-        await s.write("data: [DONE]\n\n");
+        await reader.cancel().catch(() => undefined);
+        if (!s.aborted) await s.write("data: [DONE]\n\n");
       }
     });
   });
