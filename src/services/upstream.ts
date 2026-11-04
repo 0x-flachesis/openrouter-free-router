@@ -98,7 +98,9 @@ export async function readNonStreamingResponse(
       text = await response.text();
     }
   } catch (err) {
-    if ((err as { name?: string } | null)?.name === "AbortError") throw err;
+    if ((err as { name?: string } | null)?.name === "AbortError" && signal?.aborted) {
+      throw err;
+    }
     return {
       ok: false,
       failure: { kind: "retryable", status: response.status, reason: `upstream body: ${String(err)}` },
