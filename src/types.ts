@@ -7,6 +7,13 @@ export interface OpenRouterModel {
     prompt: string;
     completion: string;
   };
+  architecture?: {
+    modality?: string;
+    input_modalities?: string[];
+    output_modalities?: string[];
+    tokenizer?: string;
+    instruct_type?: string | null;
+  };
 }
 
 export interface FreeModel {
