@@ -7,7 +7,6 @@ function num(name: string, fallback: number): number {
 
 export interface Config {
   port: number;
-  maxAttempts: number;
   modelRefreshMs: number;
   requestTimeoutMs: number;
   referer: string;
@@ -17,7 +16,6 @@ export interface Config {
 export function loadConfig(): Config {
   return {
     port: num("PORT", 3000),
-    maxAttempts: num("MAX_ATTEMPTS", 10),
     modelRefreshMs: num("MODEL_REFRESH_MS", 60000),
     requestTimeoutMs: num("REQUEST_TIMEOUT_MS", 60000),
     referer: process.env.OPENROUTER_REFERER || "https://flachesis.org",

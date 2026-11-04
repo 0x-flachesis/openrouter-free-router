@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { routeChatCall } from "../../src/services/router.js";
 import { loadConfig } from "../../src/config.js";
 
-const config = { ...loadConfig(), maxAttempts: 10, requestTimeoutMs: 60000 };
+const config = { ...loadConfig(), requestTimeoutMs: 60000 };
 const models = [
   { id: "m1", name: "M1", created: 300, context_length: 3000 },
   { id: "m2", name: "M2", created: 200, context_length: 2000 },
@@ -61,12 +61,12 @@ describe("routeChatCall", () => {
     expect((out as any).attempts).toBe(3);
   });
 
-  it("tries all free candidates even beyond default MAX_ATTEMPTS", async () => {
+  it("tries all free candidates without a fixed attempt limit", async () => {
     const fetchFn = vi.fn().mockResolvedValue(resp(503, "down"));
     const out = await routeChatCall({
       body: { messages: [] },
       models,
-      config: { ...config, maxAttempts: 2 },
+      config,
       fetchFn,
     });
     expect(out.kind).toBe("all-failed");

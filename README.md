@@ -36,13 +36,19 @@ pnpm test:e2e # real upstream, needs RUN_E2E=1
 | Var | Default |
 |---|---|
 | `PORT` | `3000` |
-| `MAX_ATTEMPTS` | `10` |
 | `MODEL_REFRESH_MS` | `60000` |
 | `REQUEST_TIMEOUT_MS` | `60000` |
 | `OPENROUTER_REFERER` | `https://flachesis.org` |
 | `OPENROUTER_TITLE` | `OpenCode` |
 
 Client `Authorization: Bearer <OpenRouter key>` is forwarded upstream when present.
+
+## Fallback behavior
+
+- Request body `models` entries are reserved as user fallbacks. Each upstream call sends only one `model` ID, so OpenRouter never picks a fallback before the router has tried free models.
+- Free candidates are tried in cache order (context_length desc, created desc) before user fallback models, so the first paid attempt happens only after all free candidates returned retryable failures.
+- Context-length errors from any candidate immediately return `400 context_length_exceeded` and do not continue to later candidates.
+- Caller `model` does not change routing; it is not used for candidate selection.
 
 > **Important — "free" still requires a key.** Even `:free` / `stealth/crouton-alpha`
 > models return `401 No cookie auth credentials found` when called anonymously.
