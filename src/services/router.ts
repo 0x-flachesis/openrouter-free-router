@@ -3,10 +3,13 @@ import type { FreeModel } from "../types.js";
 import { callUpstream, type UpstreamOpts } from "./upstream.js";
 import type { UpstreamFailure } from "./errors.js";
 
+type ContextLengthFailure = Extract<UpstreamFailure, { kind: "context-length" }>;
+type ClientErrorFailure = Extract<UpstreamFailure, { kind: "client-error" }>;
+
 export type RouterOutcome =
   | { kind: "ok"; response: Response; model: string }
-  | { kind: "context-length"; model: string; failure: UpstreamFailure }
-  | { kind: "client-error"; model: string; failure: UpstreamFailure }
+  | { kind: "context-length"; model: string; failure: ContextLengthFailure }
+  | { kind: "client-error"; model: string; failure: ClientErrorFailure }
   | { kind: "all-failed"; attempts: number; lastReason: string };
 
 export interface RoutedCall {

@@ -38,7 +38,7 @@ export function chatRoutes(deps: ChatDeps) {
     if (outcome.kind === "client-error") {
       return c.json(
         { error: { message: outcome.failure.body.message, type: "invalid_request_error", code: outcome.failure.body.code ?? "upstream_error" } },
-        outcome.failure.status,
+        outcome.failure.status as any,
       );
     }
     if (outcome.kind === "all-failed") {

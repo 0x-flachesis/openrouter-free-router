@@ -44,13 +44,14 @@ export function classifyUpstreamError(
   status: number,
   rawBody: string,
 ): UpstreamFailure {
-  const body = parseUpstreamErrorBody(rawBody);
-  if (status === 400 && isContextLengthErrorMessage(body.message)) {
-    return { kind: "context-length", status, body };
-  }
   if (status >= 400 && status < 500 && status !== 429) {
+    const body = parseUpstreamErrorBody(rawBody);
+    if (status === 400 && isContextLengthErrorMessage(body.message)) {
+      return { kind: "context-length", status, body };
+    }
     return { kind: "client-error", status, body };
   }
+  const body = parseUpstreamErrorBody(rawBody);
   return {
     kind: "retryable",
     status,
