@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   isContextLengthErrorMessage,
   classifyUpstreamError,
+  classifyUpstreamSuccessBody,
 } from "../../src/services/errors.js";
 
 describe("isContextLengthErrorMessage", () => {
@@ -32,5 +33,36 @@ describe("classifyUpstreamError", () => {
   it("500 -> retryable", () => {
     const f = classifyUpstreamError(500, "boom");
     expect(f.kind).toBe("retryable");
+  });
+});
+
+describe("classifyUpstreamSuccessBody", () => {
+  it("uses envelope code for classification (429 retryable)", () => {
+    const f = classifyUpstreamSuccessBody(
+      200,
+      JSON.stringify({ error: { code: 429, message: "Rate limit exceeded" } }),
+    );
+    expect(f?.kind).toBe("retryable");
+  });
+
+  it("uses envelope code for classification (400 context-length)", () => {
+    const f = classifyUpstreamSuccessBody(
+      200,
+      JSON.stringify({ error: { code: 400, message: "maximum context length exceeded" } }),
+    );
+    expect(f?.kind).toBe("context-length");
+  });
+
+  it("uses envelope code for classification (401 client-error)", () => {
+    const f = classifyUpstreamSuccessBody(
+      200,
+      JSON.stringify({ error: { code: 401, message: "Invalid credentials" } }),
+    );
+    expect(f?.kind).toBe("client-error");
+    expect((f as any).status).toBe(401);
+  });
+
+  it("returns null when body has no error envelope", () => {
+    expect(classifyUpstreamSuccessBody(200, JSON.stringify({ choices: [] }))).toBeNull();
   });
 });

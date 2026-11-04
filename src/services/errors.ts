@@ -67,9 +67,12 @@ export function classifyUpstreamSuccessBody(
   status: number,
   rawBody: string,
 ): UpstreamFailure | null {
-  return parseUpstreamErrorBody(rawBody)
-    ? classifyUpstreamError(status, rawBody)
-    : null;
+  const parsed = parseUpstreamErrorBody(rawBody);
+  if (!parsed) return null;
+  const effective = Number.isInteger(parsed.code) && parsed.code >= 100 && parsed.code < 600
+    ? parsed.code
+    : status;
+  return classifyUpstreamError(effective, rawBody);
 }
 
 export function isTimeoutError(err: unknown): boolean {
