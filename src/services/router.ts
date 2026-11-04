@@ -95,9 +95,11 @@ export async function routeChatCall(opts: RoutedCall): Promise<RouterOutcome> {
       continue;
     }
 
+    const headers = new Headers();
+    headers.set("Content-Type", "application/json");
     const okResponse = new Response(read.text, {
       status: read.status,
-      headers: result.response.headers,
+      headers,
     });
     return { kind: "ok", response: okResponse, status: result.status, model: candidate.id };
   }

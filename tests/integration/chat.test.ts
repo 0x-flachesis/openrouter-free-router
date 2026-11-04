@@ -54,6 +54,24 @@ describe("POST /v1/chat/completions", () => {
     expect(sent.model).toBe("m1/free");
   });
 
+
+  it("non-streaming success does not forward upstream Content-Encoding / Length", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Content-Encoding": "gzip", "Content-Length": "9999" },
+      }),
+    );
+    const app = buildApp(fetchFn as any);
+    const res = await app.request("/v1/chat/completions", post({ messages: [] }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Encoding")).toBeNull();
+    expect(res.headers.get("Content-Length")).not.toBe("9999");
+    expect(res.headers.get("Content-Type")).toBe("application/json");
+    const txt = await res.text();
+    expect(txt).toBe(JSON.stringify({ choices: [] }));
+  });
+
   it("streaming returns SSE and terminates with [DONE]", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response('data: {"a":1}\n\n', { status: 200 }),
