@@ -122,11 +122,58 @@ describe("routeChatCall", () => {
     expect(headers.get("Authorization")).toBe("Bearer secret");
   });
 
-  it("sets default HTTP-Referer / X-Title headers", async () => {
+  it("sets default HTTP-Referer / X-Title / User-Agent headers", async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResp(200, {}));
     await routeChatCall({ body: { messages: [] }, models, config, fetchFn });
     const headers = (fetchFn.mock.calls[0]![1] as any).headers as Headers;
     expect(headers.get("HTTP-Referer")).toBe("https://flachesis.org");
     expect(headers.get("X-Title")).toBe("OpenCode");
+    expect(headers.get("User-Agent")).toBe("openrouter-free-router/0.1");
+  });
+
+  it("prefers client HTTP-Referer / X-Title / User-Agent and forwards other headers", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResp(200, {}));
+    const headers = new Headers({
+      "HTTP-Referer": "https://client.example",
+      "X-Title": "Client App",
+      "User-Agent": "client/1.0",
+      "X-Request-Id": "req-1",
+      Host: "router.local",
+      Cookie: "session=secret",
+      "Content-Length": "12",
+      "Accept-Encoding": "gzip",
+      "Proxy-Authorization": "Basic eA==",
+      Connection: "keep-alive, x-hop",
+      "X-Hop": "drop-me",
+    });
+    await routeChatCall({ body: { messages: [] }, headers, models, config, fetchFn });
+    const sent = (fetchFn.mock.calls[0]![1] as any).headers as Headers;
+    expect(sent.get("HTTP-Referer")).toBe("https://client.example");
+    expect(sent.get("X-Title")).toBe("Client App");
+    expect(sent.get("User-Agent")).toBe("client/1.0");
+    expect(sent.get("X-Request-Id")).toBe("req-1");
+    expect(sent.get("Host")).toBeNull();
+    expect(sent.get("Cookie")).toBeNull();
+    expect(sent.get("Content-Length")).toBeNull();
+    expect(sent.get("Accept-Encoding")).toBeNull();
+    expect(sent.get("Proxy-Authorization")).toBeNull();
+    expect(sent.get("Connection")).toBeNull();
+    expect(sent.get("X-Hop")).toBeNull();
+    expect(sent.get("Authorization")).toBeNull();
+    expect(sent.get("Content-Type")).toBe("application/json");
+  });
+
+  it("falls back when client identity headers are blank", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResp(200, {}));
+    const headers = new Headers({
+      "HTTP-Referer": "  ",
+      "X-Title": "",
+      "User-Agent": " \t ",
+    });
+    await routeChatCall({ body: { messages: [] }, headers, models, config, fetchFn });
+    const sent = (fetchFn.mock.calls[0]![1] as any).headers as Headers;
+    expect(sent.get("HTTP-Referer")).toBe("https://flachesis.org");
+    expect(sent.get("X-Title")).toBe("OpenCode");
+    expect(sent.get("User-Agent")).toBe("openrouter-free-router/0.1");
   });
 });

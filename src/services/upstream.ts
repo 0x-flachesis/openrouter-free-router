@@ -12,6 +12,7 @@ export interface UpstreamOpts {
   model: string;
   body: Record<string, unknown>;
   apiKey?: string;
+  headers?: Headers;
   config: Config;
   fetchFn?: typeof fetch;
   signal?: AbortSignal;
@@ -21,12 +22,60 @@ export type UpstreamResult =
   | { ok: true; response: Response; status: number }
   | { ok: false; failure: UpstreamFailure };
 
-function buildHeaders(config: Config, apiKey?: string): Headers {
+const DEFAULT_USER_AGENT = "openrouter-free-router/0.1";
+
+/** Framing, hop-by-hop, and headers this proxy owns. `proxy-*` is blocked separately. */
+const BLOCKED_REQUEST_HEADERS = new Set([
+  "accept-encoding",
+  "authorization",
+  "connection",
+  "content-encoding",
+  "content-length",
+  "content-type",
+  "cookie",
+  "expect",
+  "host",
+  "keep-alive",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+function isBlockedHeader(name: string, extra: Set<string>): boolean {
+  const lower = name.toLowerCase();
+  return BLOCKED_REQUEST_HEADERS.has(lower) || lower.startsWith("proxy-") || extra.has(lower);
+}
+
+function connectionHopHeaders(headers: Headers): Set<string> {
+  const extra = new Set<string>();
+  const raw = headers.get("connection");
+  if (!raw) return extra;
+  for (const part of raw.split(",")) {
+    const name = part.trim().toLowerCase();
+    if (name && name !== "close") extra.add(name);
+  }
+  return extra;
+}
+
+function clientHeader(headers: Headers | undefined, name: string): string | undefined {
+  const value = headers?.get(name)?.trim();
+  return value ? value : undefined;
+}
+
+function buildHeaders(config: Config, apiKey?: string, clientHeaders?: Headers): Headers {
   const h = new Headers();
+  if (clientHeaders) {
+    const extra = connectionHopHeaders(clientHeaders);
+    for (const [name, value] of clientHeaders) {
+      if (isBlockedHeader(name, extra)) continue;
+      h.append(name, value);
+    }
+  }
   h.set("Content-Type", "application/json");
-  h.set("HTTP-Referer", config.referer);
-  h.set("X-Title", config.title);
-  h.set("User-Agent", "openrouter-free-router/0.1");
+  h.set("HTTP-Referer", clientHeader(clientHeaders, "HTTP-Referer") ?? config.referer);
+  h.set("X-Title", clientHeader(clientHeaders, "X-Title") ?? config.title);
+  h.set("User-Agent", clientHeader(clientHeaders, "User-Agent") ?? DEFAULT_USER_AGENT);
   if (apiKey) h.set("Authorization", `Bearer ${apiKey}`);
   return h;
 }
@@ -37,7 +86,7 @@ function timeoutSignal(ms: number, parent?: AbortSignal): AbortSignal {
 }
 
 export async function callUpstream(opts: UpstreamOpts): Promise<UpstreamResult> {
-  const { model, body, apiKey, config, fetchFn = fetch, signal } = opts;
+  const { model, body, apiKey, headers, config, fetchFn = fetch, signal } = opts;
   const { models: _clientModels, ...forwardBody } = body;
   const payload = { ...forwardBody, model };
 
@@ -45,7 +94,7 @@ export async function callUpstream(opts: UpstreamOpts): Promise<UpstreamResult> 
   try {
     res = await fetchFn(CHAT_URL, {
       method: "POST",
-      headers: buildHeaders(config, apiKey),
+      headers: buildHeaders(config, apiKey, headers),
       body: JSON.stringify(payload),
       signal: timeoutSignal(config.requestTimeoutMs, signal),
     });

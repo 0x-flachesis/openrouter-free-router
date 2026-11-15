@@ -3,7 +3,6 @@ import type { FreeModel } from "../types.js";
 import {
   callUpstream,
   readNonStreamingResponse,
-  type UpstreamOpts,
 } from "./upstream.js";
 import type { UpstreamFailure } from "./errors.js";
 
@@ -19,6 +18,7 @@ export type RouterOutcome =
 export interface RoutedCall {
   body: Record<string, unknown>;
   apiKey?: string;
+  headers?: Headers;
   models: FreeModel[];
   config: Config;
   fetchFn?: typeof fetch;
@@ -42,7 +42,7 @@ export function userFallbackModels(body: Record<string, unknown>): string[] {
 }
 
 export async function routeChatCall(opts: RoutedCall): Promise<RouterOutcome> {
-  const { body, apiKey, models, config, fetchFn, signal, onAttempt } = opts;
+  const { body, apiKey, headers, models, config, fetchFn, signal, onAttempt } = opts;
   const freeCandidates = [...models];
   const fallbackCandidates = userFallbackModels(body).filter(
     (id) => !freeCandidates.some((m) => m.id === id),
@@ -58,14 +58,15 @@ export async function routeChatCall(opts: RoutedCall): Promise<RouterOutcome> {
   for (const candidate of candidates) {
     attempts += 1;
     onAttempt?.(candidate.id, attempts);
-    const result: Awaited<ReturnType<typeof callUpstream>> = await callUpstream({
+    const result = await callUpstream({
       model: candidate.id,
       body,
       apiKey,
+      headers,
       config,
       fetchFn,
       signal,
-    } as UpstreamOpts);
+    });
     if (!result.ok) {
       const f = result.failure;
       if (f.kind === "context-length") {
@@ -95,11 +96,11 @@ export async function routeChatCall(opts: RoutedCall): Promise<RouterOutcome> {
       continue;
     }
 
-    const headers = new Headers();
-    headers.set("Content-Type", "application/json");
+    const responseHeaders = new Headers();
+    responseHeaders.set("Content-Type", "application/json");
     const okResponse = new Response(read.text, {
       status: read.status,
-      headers,
+      headers: responseHeaders,
     });
     return { kind: "ok", response: okResponse, status: result.status, model: candidate.id };
   }

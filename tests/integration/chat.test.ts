@@ -104,6 +104,35 @@ describe("POST /v1/chat/completions", () => {
     expect(json.error.code).toBe("all_models_failed");
   });
 
+  it("forwards client headers and prefers client identity headers", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [] }), { status: 200 }),
+    );
+    const app = buildApp(fetchFn as any);
+    const res = await app.request(
+      "/v1/chat/completions",
+      post({ messages: [] }, {
+        "HTTP-Referer": "https://client.example",
+        "X-Title": "Client App",
+        "User-Agent": "client/1.0",
+        "X-Request-Id": "req-9",
+        Cookie: "session=secret",
+        Host: "router.local",
+        Authorization: "Basic not-a-bearer",
+      }),
+    );
+    expect(res.status).toBe(200);
+    const headers = (fetchFn.mock.calls[0]![1] as any).headers as Headers;
+    expect(headers.get("HTTP-Referer")).toBe("https://client.example");
+    expect(headers.get("X-Title")).toBe("Client App");
+    expect(headers.get("User-Agent")).toBe("client/1.0");
+    expect(headers.get("X-Request-Id")).toBe("req-9");
+    expect(headers.get("Cookie")).toBeNull();
+    expect(headers.get("Host")).toBeNull();
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
   it("forwards client Authorization header upstream as Bearer key", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ choices: [] }), { status: 200 }),

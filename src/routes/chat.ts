@@ -31,6 +31,7 @@ export function chatRoutes(deps: ChatDeps) {
     const outcome = await routeChatCall({
       body,
       apiKey,
+      headers: c.req.raw.headers,
       models,
       config,
       fetchFn,
